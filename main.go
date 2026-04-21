@@ -2,8 +2,10 @@ package main
 
 //BUILD :  go build -o out && ./out
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync/atomic"
 )
 
@@ -26,7 +28,7 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 func (cfg *apiConfig) handlerMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(fmt.Sprintf(
+	w.Write(fmt.Appendf(nil,
 		`
 		<html>
   			<body>
@@ -34,7 +36,61 @@ func (cfg *apiConfig) handlerMetrics(w http.ResponseWriter, r *http.Request) {
 			    <p>Chirpy has been visited %d times!</p>
 			</body>
 		</html>
-		`, cfg.fileserverHits.Load())))
+		`, cfg.fileserverHits.Load()))
+}
+
+func handlerValidateChirp(w http.ResponseWriter, r *http.Request) {
+	type chirpRequest struct {
+		Body string `json:"body"`
+	}
+
+	type ChirpResponse struct {
+		//Valid       bool   `json:"valid"`
+		CleanedBody string `json:"cleaned_body"`
+	}
+
+	type errorResponse struct {
+		Error string `json:"error"`
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	//	1. Decode:
+	var req chirpRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(errorResponse{Error: "Something went wrong"})
+		return
+	}
+
+	//	2. Validate:
+	if len(req.Body) > 140 {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(errorResponse{Error: "Chirp is too long"})
+		return
+	}
+
+	// 2.5 AntiProfanity
+	badWords := []string{"kerfuffle", "sharbert", "fornax"}
+
+	words := strings.Split(req.Body, " ")
+	for i := range words {
+		words[i] = ProfanFilter(words[i], badWords)
+	}
+	cleanWords := strings.Join(words, " ")
+
+	// 	3. Success:
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(ChirpResponse{CleanedBody: cleanWords})
+}
+
+func ProfanFilter(word string, badWords []string) string {
+	for _, badWord := range badWords {
+		if strings.ToLower(word) == badWord {
+			return "****"
+		}
+	}
+	return word
 }
 
 func (cfg *apiConfig) handlerResetCounter(w http.ResponseWriter, r *http.Request) {
@@ -61,6 +117,7 @@ func main() {
 	fileServerHandler := http.StripPrefix("/app", http.FileServer(http.Dir(".")))
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(fileServerHandler))
 	mux.HandleFunc("GET /api/healthz", handlerReadiness)
+	mux.HandleFunc("POST /api/validate_chirp", handlerValidateChirp)
 	mux.HandleFunc("GET /admin/metrics", apiCfg.handlerMetrics)
 	mux.HandleFunc("POST /admin/reset", apiCfg.handlerResetCounter)
 
