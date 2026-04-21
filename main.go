@@ -2,11 +2,18 @@ package main
 
 //BUILD :  go build -o out && ./out
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
+
+	"github.com/DevJoshBrown/Chirpy/internal/database"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 type Server struct {
@@ -15,6 +22,7 @@ type Server struct {
 // used to hold any stateful in-memory data that we want to keep track of.
 type apiConfig struct {
 	fileserverHits atomic.Int32
+	database       *database.Queries
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -105,8 +113,19 @@ func handlerReadiness(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	godotenv.Load()
+	dbURL := os.Getenv("DB_URL")
+
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatalf("failed to open postgres database at %s", dbURL)
+	}
+	dbQueries := database.New(db)
+
 	fmt.Println("Running main.go")
-	apiCfg := &apiConfig{}
+	apiCfg := &apiConfig{
+		database: dbQueries,
+	}
 	mux := http.NewServeMux()
 
 	server := &http.Server{
