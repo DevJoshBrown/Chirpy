@@ -25,6 +25,7 @@ type Server struct {
 type apiConfig struct {
 	fileserverHits atomic.Int32
 	database       *database.Queries
+	platform       string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -141,9 +142,9 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) 
 
 	user, err := cfg.database.CreateUser(r.Context(), req.Email)
 	if err != nil {
+		log.Printf("CreateUser failed: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(errorResponse{
-			Error: "could not create user"})
+		json.NewEncoder(w).Encode(errorResponse{Error: "could not create user"})
 		return
 	}
 
@@ -156,6 +157,21 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) 
 	})
 
 }
+
+func (cfg *apiConfig) handlerResetUsers(w http.ResponseWriter, r *http.Request) {
+	if cfg.platform != "dev" {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	err := cfg.database.RemoveUsers(r.Context())
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+
+}
+
 func main() {
 	godotenv.Load()
 	dbURL := os.Getenv("DB_URL")
@@ -169,6 +185,7 @@ func main() {
 	fmt.Println("Running main.go")
 	apiCfg := &apiConfig{
 		database: dbQueries,
+		platform: os.Getenv("PLATFORM"),
 	}
 	mux := http.NewServeMux()
 
@@ -183,7 +200,7 @@ func main() {
 	mux.HandleFunc("POST /api/validate_chirp", handlerValidateChirp)
 	mux.HandleFunc("POST /api/users", apiCfg.handlerCreateUser)
 	mux.HandleFunc("GET /admin/metrics", apiCfg.handlerMetrics)
-	mux.HandleFunc("POST /admin/reset", apiCfg.handlerResetCounter)
+	mux.HandleFunc("POST /admin/reset", apiCfg.handlerResetUsers)
 
 	server.ListenAndServe()
 }
