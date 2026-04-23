@@ -61,14 +61,22 @@ func handlerReadiness(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("OK"))
 }
 
-func handlerValidateChirp(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) handerGetChirps(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, r *http.Request) {
 	type chirpRequest struct {
-		Body string `json:"body"`
+		Body   string    `json:"body"`
+		UserID uuid.UUID `json:"user_id"`
 	}
 
 	type ChirpResponse struct {
-		//Valid       bool   `json:"valid"`
-		CleanedBody string `json:"cleaned_body"`
+		ID        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Body      string    `json:"body"`
+		UserID    uuid.UUID `json:"user_id"`
 	}
 
 	type errorResponse struct {
@@ -99,11 +107,28 @@ func handlerValidateChirp(w http.ResponseWriter, r *http.Request) {
 	for i := range words {
 		words[i] = ProfanFilter(words[i], badWords)
 	}
-	cleanWords := strings.Join(words, " ")
+	cleanChirp := strings.Join(words, " ")
 
 	// 	3. Success:
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(ChirpResponse{CleanedBody: cleanWords})
+	chirp, err := cfg.database.CreateChirp(r.Context(), database.CreateChirpParams{
+		Body:   cleanChirp,
+		UserID: req.UserID,
+	})
+	if err != nil {
+		log.Printf("CreateChirp failed: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(errorResponse{Error: "could not create user"})
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(ChirpResponse{
+		ID:        chirp.ID,
+		CreatedAt: chirp.CreatedAt,
+		UpdatedAt: chirp.UpdatedAt,
+		Body:      chirp.Body,
+		UserID:    chirp.UserID,
+	})
+
 }
 
 func ProfanFilter(word string, badWords []string) string {
@@ -197,7 +222,8 @@ func main() {
 	fileServerHandler := http.StripPrefix("/app", http.FileServer(http.Dir(".")))
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(fileServerHandler))
 	mux.HandleFunc("GET /api/healthz", handlerReadiness)
-	mux.HandleFunc("POST /api/validate_chirp", handlerValidateChirp)
+	mux.HandleFunc("GET /api/chirps", apiCfg.handerGetChirps)
+	mux.HandleFunc("POST /api/chirps", apiCfg.handlerChirps)
 	mux.HandleFunc("POST /api/users", apiCfg.handlerCreateUser)
 	mux.HandleFunc("GET /admin/metrics", apiCfg.handlerMetrics)
 	mux.HandleFunc("POST /admin/reset", apiCfg.handlerResetUsers)
