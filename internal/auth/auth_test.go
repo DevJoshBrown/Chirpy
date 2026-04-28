@@ -1,6 +1,11 @@
 package auth
 
-import "testing"
+import (
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+)
 
 func TestHashPasswordSucceeds(t *testing.T) {
 	hash, err := HashPassword("correct horse battery staple")
@@ -93,5 +98,72 @@ func TestCheckPasswordHashTable(t *testing.T) {
 				t.Errorf("got %v, want %v", got, tc.want)
 			}
 		})
+	}
+
+}
+
+func TestMakeAndValidateJWT(t *testing.T) {
+	// Round-trip: a freshly made token should validate and yield the same userID.
+	userID := uuid.New()
+	secret := "test-secret"
+
+	tokenString, err := MakeJWT(userID, secret, time.Hour)
+	if err != nil {
+		t.Fatalf("MakeJWT failed: %v", err)
+	}
+
+	gotID, err := ValidateJWT(tokenString, secret)
+	if err != nil {
+		t.Fatalf("ValidateJWT failed: %v", err)
+	}
+	if gotID != userID {
+		t.Errorf("userID mismatch: got %v, want %v", gotID, userID)
+	}
+}
+
+func TestValidateJWTRejectsExpiredToken(t *testing.T) {
+	// Make a token that's already expired by signing it with a negative duration.
+	userID := uuid.New()
+	secret := "test-secret"
+
+	tokenString, err := MakeJWT(userID, secret, -time.Hour)
+	if err != nil {
+		t.Fatalf("MakeJWT failed: %v", err)
+	}
+
+	_, err = ValidateJWT(tokenString, secret)
+	if err == nil {
+		t.Error("expected error for expired token, got nil")
+	}
+}
+
+func TestValidateJWTRejectsWrongSecret(t *testing.T) {
+	// Sign with one secret, validate with another → signature mismatch.
+	userID := uuid.New()
+
+	tokenString, err := MakeJWT(userID, "correct-secret", time.Hour)
+	if err != nil {
+		t.Fatalf("MakeJWT failed: %v", err)
+	}
+
+	_, err = ValidateJWT(tokenString, "wrong-secret")
+	if err == nil {
+		t.Error("expected error for wrong secret, got nil")
+	}
+}
+
+func TestValidateJWTRejectsMalformedToken(t *testing.T) {
+	// A garbage string isn't a valid JWT at all.
+	_, err := ValidateJWT("not.a.real.token", "any-secret")
+	if err == nil {
+		t.Error("expected error for malformed token, got nil")
+	}
+}
+
+func TestValidateJWTRejectsEmptyToken(t *testing.T) {
+	// Empty string should also fail cleanly (not panic).
+	_, err := ValidateJWT("", "any-secret")
+	if err == nil {
+		t.Error("expected error for empty token, got nil")
 	}
 }
