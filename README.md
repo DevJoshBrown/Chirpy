@@ -11,9 +11,9 @@ A small Twitter-like HTTP API written in Go. Users can register, log in, post sh
 - "Chirpy Red" premium membership upgraded via incoming Polka webhooks (API-key authenticated)
 - Admin endpoints (metrics page, dev-only data reset) gated by `PLATFORM=dev`
 
-## Why look at this
+## Why it exists
 
-It's a complete backend in idiomatic Go's standard library — no web framework. Useful as a reference for:
+It's a complete backend in idiomatic Go's standard library - no web framework. Useful as a reference for:
 - HTTP routing with Go 1.22+ method-prefixed `ServeMux` patterns (e.g. `GET /api/chirps/{chirpID}`)
 - JWT issue / verify / refresh / revoke flows
 - sqlc + goose for type-safe SQL and versioned migrations
